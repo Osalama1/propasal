@@ -25,7 +25,8 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/propasal/css/propasal.css"
+# CSS is embedded inline in quotation_hierarchy.js - no external CSS needed
+# app_include_css = "/assets/propasal/css/quotation_tree.css"
 # app_include_js = "/assets/propasal/js/propasal.js"
 
 # include js, css files in header of web template
@@ -43,7 +44,10 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Quotation" : "public/js/quotation_hierarchy.js",
+	"Quotation Item" : "public/js/quotation_item_discount.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -83,7 +87,7 @@ app_license = "mit"
 # ------------
 
 # before_install = "propasal.install.before_install"
-# after_install = "propasal.install.after_install"
+after_install = "propasal.install.after_install"
 
 # Uninstallation
 # ------------
@@ -129,21 +133,27 @@ app_license = "mit"
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Quotation": ["propasal.propasal.overrides.quotation.Quotation"]
+}
 
 # Document Events
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Quotation": {
+		"on_update_after_submit": [
+			"propasal.propasal.services.quotation_hierarchy_service.on_quotation_update_after_submit"
+		],
+		"on_cancel": [
+			"propasal.propasal.services.quotation_hierarchy_service.on_quotation_cancel"
+		],
+		"on_trash": [
+			"propasal.propasal.services.quotation_hierarchy_service.on_quotation_trash"
+		],
+	}
+}
 
 # Scheduled Tasks
 # ---------------

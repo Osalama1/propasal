@@ -263,10 +263,24 @@ frappe.ui.form.on("Quotation", {
 	},
 	
 	setup_hierarchy_tree(frm) {
-		// Show tree for both new and existing quotations
+		// Check if WBS tree mode is enabled
+		if (propasal.wbs && propasal.wbs.isEnabled && propasal.wbs.isEnabled(frm)) {
+			// Use WBS tree (Proposal WBS Item based)
+			frm.trigger("build_wbs_tree");
+			return;
+		}
+		
+		// Use legacy mode (Quotation Item based)
 		if (!propasal.quotation.TreeInstance || 
 		    propasal.quotation.TreeInstance.docname !== frm.doc.name) {
 			frm.trigger("build_hierarchy_tree");
+		}
+	},
+	
+	build_wbs_tree(frm) {
+		// Initialize WBS tree component
+		if (propasal.wbs && propasal.wbs.initForQuotation) {
+			propasal.wbs.initForQuotation(frm);
 		}
 	},
 	

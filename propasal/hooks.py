@@ -45,7 +45,7 @@ app_license = "mit"
 
 # include js in doctype views
 doctype_js = {
-	"Quotation" : "public/js/quotation_hierarchy.js",
+	"Quotation" : ["public/js/quotation_hierarchy.js", "public/js/wbs_tree.js"],
 	"Quotation Item" : "public/js/quotation_item_discount.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -150,7 +150,8 @@ doc_events = {
 			"propasal.propasal.services.quotation_hierarchy_service.on_quotation_cancel"
 		],
 		"on_trash": [
-			"propasal.propasal.services.quotation_hierarchy_service.on_quotation_trash"
+			"propasal.propasal.services.quotation_hierarchy_service.on_quotation_trash",
+			"propasal.propasal.services.wbs_service.on_quotation_trash"
 		],
 	}
 }

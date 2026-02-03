@@ -133,7 +133,7 @@ def create_quotation_hierarchy_fields():
 	}
 	
 	# ========================================================================
-	# QUOTATION FIELDS (Tree View Tab)
+	# QUOTATION FIELDS (Tree View Tab + WBS Link)
 	# ========================================================================
 	quotation_fields = {
 		"Quotation": [
@@ -150,6 +150,34 @@ def create_quotation_hierarchy_fields():
 				"insert_after": "hierarchy_tree_tab",
 				"hidden": 0,
 				"read_only": 1,
+			},
+			{
+				"fieldname": "root_wbs_item",
+				"fieldtype": "Link",
+				"label": "Root WBS Item",
+				"description": "Root node of the Proposal WBS Item tree for this quotation",
+				"options": "Proposal WBS Item",
+				"insert_after": "quotation_tree",
+				"read_only": 1,
+				"hidden": 1,
+				"no_copy": 1,
+			},
+			{
+				"fieldname": "use_wbs_tree",
+				"fieldtype": "Check",
+				"label": "Use WBS Tree",
+				"description": "If checked, use the new Proposal WBS Item tree system",
+				"default": 0,
+				"insert_after": "root_wbs_item",
+				"hidden": 1,
+			},
+			{
+				"fieldname": "estimated_budget",
+				"fieldtype": "Currency",
+				"label": "Estimated Budget",
+				"description": "Initial project budget estimate for WBS tree",
+				"insert_after": "use_wbs_tree",
+				"hidden": 0,
 			},
 		]
 	}

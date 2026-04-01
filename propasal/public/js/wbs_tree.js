@@ -395,12 +395,23 @@ propasal.wbs.WBSTree = class WBSTree {
 							</svg>
 							${__("Add Activity")}
 						</button>
+						<button class="wbs-btn wbs-btn-success" data-action="create-handover" title="${__("Create Handover")}">
+							<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+								<polyline points="14,2 14,8 20,8"/>
+								<line x1="16" y1="13" x2="8" y2="13"/>
+								<line x1="16" y1="17" x2="8" y2="17"/>
+								<polyline points="10,9 9,9 8,9"/>
+							</svg>
+							${__("Create Handover")}
+						</button>
 					</div>
 					` : ""}
 				</div>
 				<div class="wbs-content" id="wbs-content"></div>
 				<div class="wbs-footer">
 					<div class="wbs-stats">
+						<span class="wbs-stat" id="wbs-stat-projects">${__("Projects")}: 0</span>
 						<span class="wbs-stat" id="wbs-stat-activities">${__("Activities")}: 0</span>
 						<span class="wbs-stat" id="wbs-stat-phases">${__("Phases")}: 0</span>
 						<span class="wbs-stat" id="wbs-stat-tasks">${__("Tasks")}: 0</span>
@@ -582,6 +593,11 @@ propasal.wbs.WBSTree = class WBSTree {
 	
 	getLevelIcon(level) {
 		switch (level) {
+			case "project":
+				return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+					<polyline points="9,22 9,12 15,12 15,22"/>
+				</svg>`;
 			case "activity":
 				return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
@@ -610,6 +626,7 @@ propasal.wbs.WBSTree = class WBSTree {
 		
 		const summary = await propasal.wbs.api.getSummary(this.quotation_name);
 		
+		this.$wrapper.find("#wbs-stat-projects").text(`${__("Projects")}: ${summary.projects || 0}`);
 		this.$wrapper.find("#wbs-stat-activities").text(`${__("Activities")}: ${summary.activities || 0}`);
 		this.$wrapper.find("#wbs-stat-phases").text(`${__("Phases")}: ${summary.phases || 0}`);
 		this.$wrapper.find("#wbs-stat-tasks").text(`${__("Tasks")}: ${summary.tasks || 0}`);
@@ -664,6 +681,9 @@ propasal.wbs.WBSTree = class WBSTree {
 					break;
 				case "delete":
 					self.confirmDelete(nodeName);
+					break;
+				case "create-handover":
+					self.showCreateHandoverDialog();
 					break;
 			}
 		});
@@ -1234,14 +1254,14 @@ propasal.wbs.WBSTree = class WBSTree {
 				}
 			},
 			{ fieldtype: "Column Break" },
-			{
-				label: __("Level"),
-				fieldname: "item_level",
-				fieldtype: "Select",
-				options: ["Activity", "Phase", "Task"],
-				default: node.item_level,
-				reqd: 1
-			},
+		{
+			label: __("Level"),
+			fieldname: "item_level",
+			fieldtype: "Select",
+			options: ["Project", "Activity", "Phase", "Task"],
+			default: node.item_level,
+			reqd: 1
+		},
 			{ fieldtype: "Section Break", label: __("Financials") }
 		];
 		
@@ -1446,6 +1466,120 @@ propasal.wbs.WBSTree = class WBSTree {
 	}
 	
 	// ========================================================================
+	// CREATE HANDOVER
+	// ========================================================================
+	
+	async showCreateHandoverDialog() {
+		const self = this;
+		
+		if (!this.quotation_name || this.quotation_name === "new" || 
+		    String(this.quotation_name).startsWith("new-")) {
+			frappe.msgprint(__("Please save the quotation first before creating a Handover."));
+			return;
+		}
+		
+		// First validate the WBS tree
+		frappe.show_progress(__("Validating..."), 0, 100);
+		
+		try {
+			const validation = await frappe.call({
+				method: "crm_customization.public.python.handover_mapper.validate_wbs_for_handover",
+				args: { quotation_name: this.quotation_name },
+				freeze: false
+			});
+			
+			frappe.hide_progress();
+			
+			const result = validation.message;
+			
+			if (!result.valid) {
+				// Show errors
+				frappe.msgprint({
+					title: __("Cannot Create Handover"),
+					indicator: "red",
+					message: result.errors.join("<br>")
+				});
+				return;
+			}
+			
+			// Show confirmation dialog with warnings if any
+			let message = __("Create Proposal Hand Over from this WBS tree?");
+			
+			if (result.warnings && result.warnings.length > 0) {
+				message += "<br><br><strong>" + __("Warnings:") + "</strong><br>";
+				message += "<ul style='margin: 5px 0; padding-left: 20px;'>";
+				result.warnings.forEach(w => {
+					message += "<li style='color: #b45309;'>" + w + "</li>";
+				});
+				message += "</ul>";
+			}
+			
+			// Get summary
+			const summary = await frappe.call({
+				method: "crm_customization.public.python.handover_mapper.get_handover_summary",
+				args: { quotation_name: this.quotation_name },
+				freeze: false
+			});
+			
+			if (summary.message) {
+				const s = summary.message;
+				message += "<br><strong>" + __("Summary:") + "</strong>";
+				message += "<ul style='margin: 5px 0; padding-left: 20px;'>";
+				message += "<li>" + __("Total WBS Items: {0}", [s.total_items || 0]) + "</li>";
+				message += "<li>" + __("Phases: {0}", [s.phase_count || 0]) + "</li>";
+				message += "<li>" + __("Disciplines: {0}", [s.unique_disciplines || 0]) + "</li>";
+				message += "<li>" + __("Consultants: {0}", [s.unique_consultants || 0]) + "</li>";
+				message += "<li>" + __("Grand Total: {0}", [format_currency(s.grand_total || 0, self.currency)]) + "</li>";
+				message += "</ul>";
+			}
+			
+			frappe.confirm(
+				message,
+				async function() {
+					// Create the handover
+					frappe.show_progress(__("Creating Handover..."), 50, 100);
+					
+					try {
+						const createResult = await frappe.call({
+							method: "crm_customization.public.python.handover_mapper.create_handover_from_wbs",
+							args: { quotation_name: self.quotation_name },
+							freeze: true,
+							freeze_message: __("Creating Proposal Hand Over...")
+						});
+						
+						frappe.hide_progress();
+						
+						if (createResult.message && createResult.message.success) {
+							frappe.show_alert({
+								message: createResult.message.message,
+								indicator: "green"
+							}, 5);
+							
+							// Open the new handover
+							frappe.set_route("Form", "Proposal Hand Over", createResult.message.name);
+						}
+					} catch (error) {
+						frappe.hide_progress();
+						frappe.msgprint({
+							title: __("Error"),
+							indicator: "red",
+							message: error.message || __("Failed to create Proposal Hand Over")
+						});
+					}
+				}
+			);
+			
+		} catch (error) {
+			frappe.hide_progress();
+			frappe.msgprint({
+				title: __("Error"),
+				indicator: "red",
+				message: error.message || __("Failed to validate WBS tree")
+			});
+		}
+	}
+	
+	// ========================================================================
 	// STYLES
 	// ========================================================================
 	
@@ -1496,6 +1630,8 @@ propasal.wbs.WBSTree = class WBSTree {
 			.wbs-tree-modern .wbs-btn:hover { background: #f1f5f9; }
 			.wbs-tree-modern .wbs-btn-primary { background: #e94560; color: white; border: none; }
 			.wbs-tree-modern .wbs-btn-primary:hover { background: #d63d56; }
+			.wbs-tree-modern .wbs-btn-success { background: #10b981; color: white; border: none; }
+			.wbs-tree-modern .wbs-btn-success:hover { background: #059669; }
 			.wbs-tree-modern .wbs-content { padding: 8px; max-height: 70vh; overflow-y: auto; }
 			.wbs-tree-modern .wbs-node { margin-bottom: 2px; }
 			.wbs-tree-modern .wbs-node-wrapper { display: flex; }
@@ -1541,6 +1677,7 @@ propasal.wbs.WBSTree = class WBSTree {
 				border-radius: 6px;
 				flex-shrink: 0;
 			}
+			.wbs-tree-modern .wbs-node-icon-project { background: #ede9fe; color: #7c3aed; }
 			.wbs-tree-modern .wbs-node-icon-activity { background: #dbeafe; color: #1d4ed8; }
 			.wbs-tree-modern .wbs-node-icon-phase { background: #dcfce7; color: #15803d; }
 			.wbs-tree-modern .wbs-node-icon-task { background: #fef3c7; color: #b45309; }

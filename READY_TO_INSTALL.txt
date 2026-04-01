@@ -69,11 +69,10 @@ QUOTATION FIELDS (2):
 
 ═══════════════════════════════════════════════════════════════════════════
 
-📚 DOCUMENTATION FILES CREATED:
+📚 DOCUMENTATION:
 
-  • COMPLETE_SETUP.md          → Comprehensive setup guide
-  • INSTALLATION.md             → Detailed installation instructions
-  • INSTALLATION_CHECKLIST.md   → Step-by-step checklist
+  • README.md                   → Overview and quick install
+  • INSTALLATION.md             → Fields, patches, troubleshooting
   • verify_installation.py      → Verification script
   • READY_TO_INSTALL.txt        → This file
 
@@ -128,10 +127,9 @@ If tree doesn't load:
 
 📞 QUICK REFERENCE:
 
-  Installation: See INSTALLATION.md or INSTALLATION_CHECKLIST.md
-  Setup Details: See COMPLETE_SETUP.md
+  Overview: README.md
+  Installation & troubleshooting: INSTALLATION.md
   Verification: Run verify_installation.py
-  Features: See QUOTATION_HIERARCHY_README.md
 
 ═══════════════════════════════════════════════════════════════════════════
 

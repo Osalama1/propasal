@@ -246,7 +246,7 @@ def add_wbs_item(quotation, item_name, item_level, parent_item=None, amount=0,
 	wbs_item.currency = quotation_doc.currency
 	
 	# Set is_group based on level
-	if item_level in ["Activity", "Phase"]:
+	if item_level in ["Project", "Activity", "Phase"]:
 		wbs_item.is_group = 1
 	
 	# Set is_root if no parent
@@ -302,7 +302,8 @@ def update_wbs_item(name, **kwargs):
 	# Fields that can be updated
 	allowed_fields = [
 		"item_name", "item_code", "item_level", "description",
-		"amount", "rate", "qty", "custom_is_fixed", "weight_in_parent_percent"
+		"amount", "rate", "qty", "custom_is_fixed", "weight_in_parent_percent",
+		"consultant", "discipline"
 	]
 	
 	# Track which financial field was explicitly provided
@@ -621,6 +622,7 @@ def get_wbs_summary(quotation_name):
 	root = get_root_wbs_item(quotation_name)
 	
 	return {
+		"projects": counts.get("Project", 0),
 		"activities": counts.get("Activity", 0),
 		"phases": counts.get("Phase", 0),
 		"tasks": counts.get("Task", 0),
@@ -668,13 +670,13 @@ def create_root_wbs_item(quotation_name, item_name=None):
 	if quotation.docstatus != 0:
 		frappe.throw(_("Cannot create WBS for submitted/cancelled quotation"))
 	
-	# Create root item
-	root_name = item_name or quotation.title or f"Project - {quotation_name}"
+	# Create root item (resolve title so literal "{customer_name}" becomes actual customer name)
+	root_name = item_name or _resolve_quotation_display_name(quotation)
 	
 	root = frappe.new_doc("Proposal WBS Item")
 	root.quotation = quotation_name
 	root.item_name = root_name
-	root.item_level = "Activity"
+	root.item_level = "Project"
 	root.is_group = 1
 	root.is_root = 1
 	root.currency = quotation.currency
@@ -753,6 +755,186 @@ def auto_initialize_wbs(doc, method=None):
 	# Create root
 	result = create_root_wbs_item(quotation_name)
 	return result.get("item") if result else None
+
+
+def auto_create_root_on_save(doc, method=None):
+	"""
+	Auto-create root Project WBS item when Quotation is saved.
+	Called from doc_events hooks.
+	
+	Also ensures the Quotation has at least one item so it can be saved
+	without requiring the user to manually add an item first.
+	
+	Args:
+		doc: Quotation document object
+		method: Hook method name (after_insert, on_update)
+	"""
+	# Only for draft quotations
+	if doc.docstatus != 0:
+		return
+	
+	# Skip if WBS tree is not enabled
+	if not doc.get("use_wbs_tree"):
+		return
+	
+	# Check if root already exists
+	existing = get_root_wbs_item(doc.name)
+	resolved_name = _resolve_quotation_display_name(doc)
+	if existing:
+		# Update root item name if quotation display name changed
+		if existing.item_name != resolved_name:
+			frappe.db.set_value(
+				"Proposal WBS Item",
+				existing.name,
+				"item_name",
+				resolved_name,
+				update_modified=False
+			)
+		return
+	
+	# Ensure quotation has at least one item (required for saving)
+	ensure_quotation_has_item(doc)
+	
+	# Create root with resolved name (avoid literal "{customer_name}")
+	root_name = resolved_name
+	
+	# #region agent log
+	import json
+	_log = {"location": "proposal_wbs_api.auto_create_root_on_save", "message": "Creating root WBS", "data": {"doc_title": doc.get("title"), "customer_name": doc.get("customer_name"), "root_name": root_name}, "timestamp": frappe.utils.now(), "sessionId": "debug-session", "hypothesisId": "H1"}
+	try:
+		open("/home/frappe/frappe-bench/.cursor/debug.log", "a").write(json.dumps(_log) + "\n")
+	except Exception:
+		pass
+	# #endregion
+	
+	root = frappe.new_doc("Proposal WBS Item")
+	root.quotation = doc.name
+	root.item_name = root_name
+	root.item_level = "Project"
+	root.is_group = 1
+	root.is_root = 1
+	root.currency = doc.currency
+	root.amount = doc.grand_total or 0
+	root.flags.ignore_permissions = True
+	root.insert()
+	
+	# Update quotation with root_wbs_item link
+	frappe.db.set_value(
+		"Quotation",
+		doc.name,
+		"root_wbs_item",
+		root.name,
+		update_modified=False
+	)
+
+
+def _resolve_quotation_display_name(doc):
+	"""Resolve display name for WBS/placeholder. Prefer custom_proposal_name, then avoid literal '{customer_name}'."""
+	# Prefer custom proposal name (custom field on Quotation)
+	name = (doc.get("custom_proposal_name") or "").strip()
+	if name:
+		return name
+	title = (doc.get("title") or "").strip()
+	if title == "{customer_name}" or not title:
+		return doc.get("customer_name") or doc.get("party_name") or ("Project - " + (doc.name or "New"))
+	return title
+
+
+def ensure_wbs_quotation_item_before_save(doc, method=None):
+	"""
+	Ensure the Quotation has at least one item before save (validate hook).
+	This is called during validation so the item is added before ERPNext
+	validates that items table is not empty.
+	
+	Args:
+		doc: Quotation document object
+		method: Hook method name
+	"""
+	# Only for draft quotations
+	if doc.docstatus != 0:
+		return
+	
+	# Skip if WBS tree is not enabled
+	if not doc.get("use_wbs_tree"):
+		return
+	
+	# Check if quotation already has items
+	if doc.get("items") and len(doc.items) > 0:
+		return  # Quotation already has items
+	
+	# Resolve name: Quotation title often defaults to literal "{customer_name}"
+	display_name = _resolve_quotation_display_name(doc)
+	
+	# #region agent log
+	import json
+	_log = {"location": "proposal_wbs_api.ensure_wbs_quotation_item_before_save", "message": "Adding placeholder item", "data": {"doc_title": doc.get("title"), "customer_name": doc.get("customer_name"), "display_name": display_name, "items_before": len(doc.get("items") or [])}, "timestamp": frappe.utils.now(), "sessionId": "debug-session", "hypothesisId": "H3"}
+	try:
+		open("/home/frappe/frappe-bench/.cursor/debug.log", "a").write(json.dumps(_log) + "\n")
+	except Exception:
+		pass
+	# #endregion
+	
+	# Ensure we have a valid UOM (required; "Nos" may not exist in all sites)
+	default_uom = frappe.db.get_value("UOM", {"enabled": 1}, "name", order_by="name asc")
+	if not default_uom:
+		default_uom = "Nos"
+	# Add a placeholder item for WBS total (Phase Name = item_name, UOM = required)
+	doc.append("items", {
+		"item_name": display_name,
+		"description": _("WBS Project Total (auto-generated). You can change Phase Code / Item if needed."),
+		"qty": 1,
+		"rate": 0,
+		"amount": 0,
+		"uom": default_uom,
+		"conversion_factor": 1,
+		"stock_uom": default_uom,
+	})
+
+
+def ensure_quotation_has_item(doc):
+	"""
+	Ensure the Quotation has at least one item (post-save version).
+	If no items exist, create a placeholder item that will be updated
+	with WBS totals.
+	
+	Args:
+		doc: Quotation document object
+	"""
+	# Check if quotation has any items
+	existing_items = frappe.db.count("Quotation Item", {"parent": doc.name})
+	
+	if existing_items > 0:
+		return  # Quotation already has items
+	
+	# Valid UOM required (Phase Name and UOM are mandatory in table)
+	default_uom = frappe.db.get_value("UOM", {"enabled": 1}, "name", order_by="name asc") or "Nos"
+	placeholder_item = frappe.new_doc("Quotation Item")
+	placeholder_item.parent = doc.name
+	placeholder_item.parenttype = "Quotation"
+	placeholder_item.parentfield = "items"
+	placeholder_item.item_name = _resolve_quotation_display_name(doc)
+	placeholder_item.description = _("WBS Project Total (auto-generated)")
+	placeholder_item.qty = 1
+	placeholder_item.rate = doc.grand_total or 0
+	placeholder_item.amount = doc.grand_total or 0
+	placeholder_item.uom = default_uom
+	placeholder_item.stock_uom = default_uom
+	placeholder_item.conversion_factor = 1
+	placeholder_item.idx = 1
+	placeholder_item.flags.ignore_permissions = True
+	placeholder_item.flags.ignore_mandatory = True
+	placeholder_item.db_insert()
+	
+	# Update quotation totals
+	frappe.db.set_value(
+		"Quotation",
+		doc.name,
+		{
+			"total": doc.grand_total or 0,
+			"net_total": doc.grand_total or 0
+		},
+		update_modified=False
+	)
 
 
 @frappe.whitelist()

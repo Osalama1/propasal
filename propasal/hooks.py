@@ -143,6 +143,15 @@ override_doctype_class = {
 
 doc_events = {
 	"Quotation": {
+		"validate": [
+			"propasal.propasal.proposal_wbs_api.ensure_wbs_quotation_item_before_save"
+		],
+		"after_insert": [
+			"propasal.propasal.proposal_wbs_api.auto_create_root_on_save"
+		],
+		"on_update": [
+			"propasal.propasal.proposal_wbs_api.auto_create_root_on_save"
+		],
 		"on_update_after_submit": [
 			"propasal.propasal.services.quotation_hierarchy_service.on_quotation_update_after_submit"
 		],

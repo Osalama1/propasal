@@ -177,9 +177,9 @@ class ProposalWBSItem(NestedSet):
 		
 		# UNLIMITED NESTING: Allow any valid level regardless of parent
 		# The UI can enforce stricter rules, but backend allows flexibility
-		valid_levels = ["Activity", "Phase", "Task"]
+		valid_levels = ["Project", "Activity", "Phase", "Task"]
 		if self.item_level not in valid_levels:
-			frappe.throw(_("Item level must be one of: Activity, Phase, Task"))
+			frappe.throw(_("Item level must be one of: Project, Activity, Phase, Task"))
 	
 	def validate_parent_quotation(self):
 		"""Ensure child items inherit quotation from parent"""
@@ -194,7 +194,7 @@ class ProposalWBSItem(NestedSet):
 	
 	def set_is_group(self):
 		"""Set is_group based on item_level"""
-		if self.item_level in ["Activity", "Phase"]:
+		if self.item_level in ["Project", "Activity", "Phase"]:
 			self.is_group = 1
 		# Don't auto-unset for Tasks as they might have children
 	
@@ -247,6 +247,9 @@ class ProposalWBSItem(NestedSet):
 		Down-Up Calculation (Aggregation):
 		Traverse up the tree from this node, summing children amounts
 		and updating parent amounts (if not fixed).
+		
+		Uses direct SQL to ensure we read committed data and commits after updates
+		to ensure subsequent calculations see the updated values.
 		"""
 		if not self.parent_proposal_wbs_item:
 			return
@@ -256,26 +259,40 @@ class ProposalWBSItem(NestedSet):
 		
 		# Process from immediate parent up to root
 		for ancestor_name in ancestors:
-			ancestor = frappe.get_doc("Proposal WBS Item", ancestor_name)
+			# Use direct SQL to get fresh data (avoid cache issues)
+			ancestor_data = frappe.db.sql("""
+				SELECT name, custom_is_fixed, amount
+				FROM `tabProposal WBS Item`
+				WHERE name = %s
+			""", ancestor_name, as_dict=True)
+			
+			if not ancestor_data:
+				continue
+			
+			ancestor = ancestor_data[0]
 			
 			# Skip if ancestor has fixed amount
 			if ancestor.custom_is_fixed:
 				continue
 			
-			# Sum all direct children amounts
-			children_sum = get_children_sum(ancestor_name)
+			# Sum all direct children amounts using direct SQL for accuracy
+			children_sum_result = frappe.db.sql("""
+				SELECT COALESCE(SUM(amount), 0) as total
+				FROM `tabProposal WBS Item`
+				WHERE parent_proposal_wbs_item = %s
+			""", ancestor_name)
+			children_sum = flt(children_sum_result[0][0]) if children_sum_result else 0
 			
 			# Update ancestor amount if different
 			if flt(ancestor.amount) != flt(children_sum):
-				frappe.db.set_value(
-					"Proposal WBS Item",
-					ancestor_name,
-					{
-						"amount": children_sum,
-						"calculated_amount": children_sum
-					},
-					update_modified=False
-				)
+				frappe.db.sql("""
+					UPDATE `tabProposal WBS Item`
+					SET amount = %s, calculated_amount = %s
+					WHERE name = %s
+				""", (children_sum, children_sum, ancestor_name))
+		
+		# Commit to ensure all parent updates are visible to subsequent operations
+		frappe.db.commit()
 	
 	def get_ancestors(self):
 		"""Get all ancestor names from this node to root"""

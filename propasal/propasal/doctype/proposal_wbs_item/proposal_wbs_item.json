@@ -63,7 +63,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Item Level",
-   "options": "\nActivity\nPhase\nTask",
+   "options": "\nProject\nActivity\nPhase\nTask",
    "reqd": 1
   },
   {

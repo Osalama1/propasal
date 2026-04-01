@@ -183,9 +183,9 @@ frappe.db.commit()
 ## Support
 
 For issues or questions:
-- Check the code documentation in the app files
-- Review the conversation history in the summary
-- Contact the development team
+- See [README.md](README.md) for an overview and quick start
+- Use the verification script and troubleshooting sections above
+- Open an issue on the app repository if applicable
 
 ## Version
 
